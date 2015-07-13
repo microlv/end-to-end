@@ -39,24 +39,13 @@ if [ ! -d lib ]; then
 fi
 cd lib
 
-# checkout closure library
-if [ ! -d closure-library/.git ]; then
-  git clone --depth 1 https://github.com/google/closure-library closure-library
-fi
+git submodule init
+git submodule update
 
-# checkout zlib.js
-if [ ! -d zlib.js/.git ]; then
-  git clone --depth 1 https://github.com/imaya/zlib.js zlib.js
+# symlink typedarray
+if [ ! -d typedarray ]; then
   mkdir typedarray
   ln -s ../zlib.js/define/typedarray/use.js typedarray/use.js
-fi
-
-# checkout closure compiler
-if [ ! -d closure-compiler/.git ]; then
-  if [ -d closure-compiler ]; then # remove binary release directory
-    rm -rf closure-compiler
-  fi
-  git clone --branch maven-release-v20150315 --depth 1 https://github.com/google/closure-compiler closure-compiler
 fi
 
 # build closure compiler
@@ -74,16 +63,15 @@ if [ ! -d closure-templates-compiler ]; then
   rm closure-templates-for-javascript-latest.zip
 fi
 
-# checkout css compiler
-if [ ! -d closure-stylesheets ]; then
-  git clone https://github.com/google/closure-stylesheets
+# build css compiler
+if [ ! -f lib/closure-stylesheets/build/closure-stylesheets.jar ]; then
   cd closure-stylesheets
   ant
   cd ..
 fi
 
-if [ ! -f chrome_extensions.js ]; then
-  curl https://raw.githubusercontent.com/google/closure-compiler/master/contrib/externs/chrome_extensions.js -O
+if [ -f chrome_extensions.js ]; then
+  rm -f chrome_extensions.js
 fi
 
 # Temporary fix

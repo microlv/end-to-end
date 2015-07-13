@@ -96,6 +96,7 @@ e2e.openpgp.ContextImpl.prototype.keyServerUrl;
 /** @override */
 e2e.openpgp.ContextImpl.prototype.setArmorHeader = function(name, value) {
   this.armorHeaders_[name] = value;
+  return e2e.async.Result.toResult(undefined);
 };
 
 
@@ -112,6 +113,7 @@ e2e.openpgp.ContextImpl.prototype.setKeyRingPassphrase = function(
     passphrase) {
   this.keyRing_ = new e2e.openpgp.KeyRing(passphrase,
       this.keyRingStorageMechanism_, this.keyServerUrl);
+  return e2e.async.Result.toResult(undefined);
 };
 
 
@@ -119,6 +121,7 @@ e2e.openpgp.ContextImpl.prototype.setKeyRingPassphrase = function(
 e2e.openpgp.ContextImpl.prototype.changeKeyRingPassphrase = function(
     passphrase) {
   this.keyRing_.changePassphrase(passphrase);
+  return e2e.async.Result.toResult(undefined);
 };
 
 
@@ -185,10 +188,9 @@ e2e.openpgp.ContextImpl.prototype.importKey = function(
   var importedBlocksResult = goog.array.map(blocks, function(block) {
     return this.tryToImportKey_(passphraseCallback, block);
   }, this);
-  var allResults =
-      /** @type {!goog.async.Deferred.<!Array.<!string>>} */ (
-          goog.async.DeferredList.gatherResults(importedBlocksResult)
-              .addCallback(function(importedBlocks) {
+  var allResults = (
+      goog.async.DeferredList.gatherResults(importedBlocksResult)
+      .addCallback(function(importedBlocks) {
         return goog.array.flatten(goog.array.map(importedBlocks,
             function(block) {
               return block ? block.getUserIds() : [];
@@ -203,9 +205,11 @@ e2e.openpgp.ContextImpl.prototype.importKey = function(
  * @param {function(string):!e2e.async.Result<string>} callback Callback used
  *     to provide a passphrase.
  * @param {!e2e.openpgp.block.TransferableKey} block
- * @param {e2e.async.Result.<!Array.<string>>=} opt_result
+ * @param {e2e.async.Result.<e2e.openpgp.block.TransferableKey>=}
+ *     opt_result Result from the previous call.
  * @param {string=} opt_passphrase
- * @return {!e2e.async.Result.<!Array.<string>>} Result with all imported uids.
+ * @return {!e2e.async.Result.<
+ *     e2e.openpgp.block.TransferableKey>} Result with all imported uids.
  * @private
  */
 e2e.openpgp.ContextImpl.prototype.tryToImportKey_ = function(
@@ -214,6 +218,9 @@ e2e.openpgp.ContextImpl.prototype.tryToImportKey_ = function(
   try {
     var passphrase = goog.isDef(opt_passphrase) ?
         e2e.stringToByteArray(opt_passphrase) : undefined;
+    // Ignore the return value. If the key is invalid (e.g. because of wrong
+    // certification), importKey throws. False as a return value only indicates
+    // duplicate keys already existing.
     this.keyRing_.importKey(block, passphrase);
     result.callback(block);
   } catch (e) {
@@ -229,7 +236,8 @@ e2e.openpgp.ContextImpl.prototype.tryToImportKey_ = function(
       result.errback(e);
     }
   }
-  return /** @type !e2e.async.Result.<!Array.<string>> */ (result.branch());
+  return /** @type {!e2e.async.Result.<e2e.openpgp.block.TransferableKey>} */ (
+      result.branch());
 };
 
 
@@ -268,7 +276,11 @@ e2e.openpgp.ContextImpl.prototype.verifyClearSign_ = function(
       clearSignMessage = e2e.openpgp.asciiArmor.parseClearSign(
           clearSignMessage);
     }
-    return this.processLiteralMessage_(clearSignMessage.toLiteralMessage());
+    return this.processLiteralMessage_(clearSignMessage.toLiteralMessage()).
+        addCallback(function(result) {
+          result.decrypt.wasEncrypted = false;
+          return result;
+        });
   } catch (e) {
     return e2e.async.Result.toError(e);
   }
@@ -312,9 +324,15 @@ e2e.openpgp.ContextImpl.prototype.verifyDecryptInternal = function(
     if (block instanceof e2e.openpgp.block.EncryptedMessage) {
       var keyCallback = goog.bind(this.keyRing_.getSecretKey, this.keyRing_);
       return block.decrypt(keyCallback, passphraseCallback).addCallback(
-          this.processLiteralMessage_, this);
+          this.processLiteralMessage_, this).addCallback(function(result) {
+        result.decrypt.wasEncrypted = true;
+        return result;
+      });
     } else {
-      return this.processLiteralMessage_(block);
+      return this.processLiteralMessage_(block).addCallback(function(result) {
+        result.decrypt.wasEncrypted = false;
+        return result;
+      });
     }
   } catch (e) {
     return e2e.async.Result.toError(e);
@@ -342,7 +360,8 @@ e2e.openpgp.ContextImpl.prototype.processLiteralMessage_ = function(block) {
         'charset': literalBlock.getCharset(),
         'creationTime': literalBlock.getTimestamp(),
         'filename': literalBlock.getFilename()
-      }
+      },
+      'wasEncrypted': false
     },
     'verify': verifyResult
   };
@@ -551,6 +570,7 @@ e2e.openpgp.ContextImpl.prototype.getAllKeys = function(opt_priv) {
 /** @inheritDoc */
 e2e.openpgp.ContextImpl.prototype.deleteKey = function(uid) {
   this.keyRing_.deleteKey(uid);
+  return e2e.async.Result.toResult(undefined);
 };
 
 
